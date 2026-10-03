@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grey Sky — канал о грозах</title>
+  <meta name="description" content="Сайт YouTube-канала о грозах: анонсы видео, спойлеры, посты, опросы и чат.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffd23f' d='M13 2 4 14h6l-1 8 9-12h-6z'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <a class="logo" href="#/">
+      <svg viewBox="0 0 24 24" width="26" height="26"><path fill="currentColor" d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
+      <span id="logoName">Grey Sky</span>
+    </a>
+    <nav id="nav">
+      <a href="#/" data-r="home">Главная</a>
+      <a href="#/videos" data-r="videos">Видео</a>
+      <a href="#/spoilers" data-r="spoilers">Спойлеры</a>
+      <a href="#/posts" data-r="posts">Посты</a>
+      <a href="#/chat" data-r="chat">Чат</a>
+      <a href="#/community" data-r="community">Сообщество</a>
+      <a href="#/admin" data-r="admin" id="navAdmin" hidden>Админка</a>
+    </nav>
+    <button class="btn small" id="userBtn" data-a="account">Войти</button>
+  </header>
+
+  <main id="view"></main>
+
+  <footer class="foot">
+    <span id="footName">Grey Sky</span> · сайт канала о грозах · <a id="footYt" href="#" target="_blank" rel="noopener">YouTube</a>
+    <span id="demoNote" hidden> · демо-режим</span>
+  </footer>
+
+  <div id="modal" class="modal" hidden></div>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/channel-videos.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

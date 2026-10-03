@@ -1,0 +1,75 @@
+{
+  "greysky": {
+    ".read": true,
+    "settings": {
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true"
+    },
+    "videos": {
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true"
+    },
+    "spoilers": {
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true"
+    },
+    "posts": {
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true"
+    },
+    "polls": {
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true"
+    },
+    "bans": {
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true"
+    },
+    "hype": {
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      "$id": {
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.val() === true"
+        }
+      }
+    },
+    "likes": {
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      "$id": {
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.val() === true"
+        }
+      }
+    },
+    "ideaVotes": {
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      "$id": {
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.val() === true"
+        }
+      }
+    },
+    "votes": {
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      "$poll": {
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid && root.child('greysky/polls').child($poll).child('open').val() === true",
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+    "comments": {
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      "$post": {
+        "$id": {
+          ".write": "auth != null && !root.child('greysky/bans').child(auth.uid).exists() && ((!data.exists() && newData.child('uid').val() === auth.uid) || (data.exists() && !newData.exists() && data.child('uid').val() === auth.uid))",
+          ".validate": "newData.hasChildren(['uid', 'name', 'text', 'ts']) && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 500 && newData.child('name').isString() && newData.child('name').val().length <= 40 && newData.child('ts').val() === now"
+        }
+      }
+    },
+    "ideas": {
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      "$id": {
+        ".write": "auth != null && !root.child('greysky/bans').child(auth.uid).exists() && ((!data.exists() && newData.child('uid').val() === auth.uid && newData.child('status').val() === 'new') || (data.exists() && !newData.exists() && data.child('uid').val() === auth.uid))",
+        ".validate": "newData.hasChildren(['uid', 'name', 'text', 'ts', 'status']) && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 300 && newData.child('name').isString() && newData.child('name').val().length <= 40"
+      }
+    }
+  }
+}
