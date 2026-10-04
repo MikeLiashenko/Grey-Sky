@@ -1,0 +1,42 @@
+name: Telegram → сайт
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: telegram-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Забрать новые посты канала
+        run: node .github/scripts/tg-sync.mjs
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+
+      - name: Сохранить на сайт
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$(git status --porcelain data)" ]; then
+            echo "Изменений нет"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          git commit -m "Import Telegram posts"
+          git pull --rebase
+          git push
+          # коммиты от GITHUB_TOKEN могут не запускать сборку Pages — просим её явно
+          gh api -X POST "repos/$GITHUB_REPOSITORY/pages/builds" || true

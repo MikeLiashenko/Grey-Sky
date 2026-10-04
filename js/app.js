@@ -57,6 +57,26 @@
     const href = safeUrl(v.url);
     return href ? `<a class="thumb" href="${href}" target="_blank" rel="noopener" style="background-image:url('${img}')"></a>` : `<div class="thumb" style="background-image:url('${img}')"></div>`;
   };
+  // Посты = файл data/telegram.json (его пополняет GitHub Actions) + база. Поля из базы важнее; deleted прячет пост.
+  let feed = { enabled: false, posts: {} };
+  const allPosts = () => {
+    const out = {};
+    Object.keys(feed.posts).forEach(id => {
+      const p = Object.assign({}, feed.posts[id]);
+      if (p.image && !/^(https?:|data:)/i.test(p.image)) p.image = new URL(p.image, location.href).href;
+      out[id] = p;
+    });
+    Object.keys(D.posts).forEach(id => (out[id] = Object.assign(out[id] || {}, D.posts[id])));
+    return Object.keys(out).filter(id => !out[id].deleted && out[id].title).map(id => Object.assign({ id }, out[id]));
+  };
+  const rows = type => (type === 'posts' ? allPosts() : list(D[type]));
+  function loadFeed() {
+    fetch('data/telegram.json?' + Date.now()).then(r => (r.ok ? r.json() : null)).then(j => {
+      if (j && j.posts) { feed = { enabled: !!j.enabled, posts: j.posts }; schedule(); }
+    }).catch(() => {});
+  }
+  setInterval(loadFeed, 5 * 60e3);
+
   const upcoming = () => list(D.videos).filter(v => v.status !== 'released').sort((a, b) => (a.date || 9e15) - (b.date || 9e15));
   // вышедшие: сначала добавленные в админке, затем снимок канала из channel-videos.js (без дублей)
   const released = () => {
@@ -130,7 +150,7 @@
   const PAGES = {
     home() {
       const s = D.settings, next = upcoming().find(v => v.date > Date.now()) || upcoming()[0];
-      const posts = list(D.posts).sort((a, b) => (!!b.pinned - !!a.pinned) || byNew(a, b)).slice(0, 2);
+      const posts = allPosts().sort((a, b) => (!!b.pinned - !!a.pinned) || byNew(a, b)).slice(0, 2);
       const poll = list(D.polls).filter(q => q.open).sort(byNew)[0];
       const rel = released().slice(0, 3);
       const yt = safeUrl(s.youtube || C.youtube);
@@ -169,7 +189,7 @@
     },
 
     posts() {
-      const posts = list(D.posts).sort((a, b) => (!!b.pinned - !!a.pinned) || byNew(a, b));
+      const posts = allPosts().sort((a, b) => (!!b.pinned - !!a.pinned) || byNew(a, b));
       return `<h1>Посты</h1>${posts.length ? posts.map(p => postCard(p)).join('') : '<div class="empty">Постов пока нет</div>'}`;
     },
 
@@ -213,7 +233,7 @@
       const tabs = { settings: 'Настройки', videos: 'Видео', spoilers: 'Спойлеры', posts: 'Посты', polls: 'Опросы', tg: 'Telegram', mod: 'Модерация' };
       return `<h1>Админка</h1>
         <div class="stats">${[['videos', 'видео'], ['spoilers', 'спойлеров'], ['posts', 'постов'], ['polls', 'опросов'], ['ideas', 'идей'], ['chat', 'сообщений']]
-          .map(([k, t]) => `<div class="card"><b>${count(D[k])}</b><span class="muted">${t}</span></div>`).join('')}</div>
+          .map(([k, t]) => `<div class="card"><b>${k === 'posts' ? allPosts().length : count(D[k])}</b><span class="muted">${t}</span></div>`).join('')}</div>
         <div class="tabs">${Object.keys(tabs).map(k => `<button class="btn small ${ui.tab === k ? '' : 'ghost'}" data-a="tab" data-id="${k}">${tabs[k]}</button>`).join('')}</div>
         ${ui.tab === 'settings' ? settingsForm() : ui.tab === 'mod' ? modPanel() : ui.tab === 'tg' ? tgPanel() : crud(ui.tab)}`;
     }
@@ -247,8 +267,8 @@
 
   function crud(type) {
     const sc = SCHEMA[type], ed = ui.edit && ui.edit.type === type ? ui.edit.id : null;
-    const cur = ed ? D[type][ed] || {} : (type === 'polls' ? { open: true } : {});
-    const items = list(D[type]).sort(byNew);
+    const cur = ed ? rows(type).find(r => r.id === ed) || {} : (type === 'polls' ? { open: true } : {});
+    const items = rows(type).sort(byNew);
     return `<div class="card stack"><h3>${ed ? 'Редактировать' : 'Добавить'} ${sc.one}</h3>
         <form data-f="crud" data-type="${type}">${sc.fields.map(f => field(`crud-${type}-${ed || 'new'}`, f, cur[f[0]])).join('')}
         ${!ed && TG_TYPES[type] && tgReady() ? `<label class="check"><input type="checkbox" name="_tg" data-k="crud-${type}-tg" checked> Отправить и в Telegram-канал</label>` : ''}
@@ -289,7 +309,7 @@
   const tgSeen = {}; // каналы, которые видит бот: id → { title, username }
   const tgNote = chat => { if (chat && chat.type === 'channel') tgSeen[chat.id] = { title: chat.title || '', username: chat.username || '' }; };
   async function tgSync(manual) {
-    if (tgBusy || !isAdmin() || !TG.token()) return;
+    if (tgBusy || !isAdmin() || !TG.token() || (feed.enabled && !manual)) return;
     tgBusy = true;
     let n = 0;
     try {
@@ -326,12 +346,12 @@
     tgBusy = false;
     schedule();
   }
-  setInterval(tgSync, 60e3);
+  setInterval(() => tgSync(), 60e3);
 
   function tgPanel() {
     const has = !!TG.token(), ch = D.settings.tgChannel || '';
     return `<div class="card stack"><h3>Telegram-канал</h3>
-      <p class="muted">Статус: ${has && ch ? 'подключено' : 'не подключено'}${has ? ' · токен сохранён в этом браузере' : ''}${tgLast ? '<br>' + esc(tgLast) : ''}</p>
+      <p class="muted">Статус: ${has && ch ? 'подключено' : 'не подключено'}${has ? ' · токен сохранён в этом браузере' : ''}<br>Перенос из канала: ${feed.enabled ? 'круглосуточно, через GitHub Actions (примерно раз в 10 минут)' : 'только пока сайт открыт у админа'}${tgLast ? '<br>' + esc(tgLast) : ''}</p>
       <form data-f="tg">
         <label>Канал (@имя или ссылка t.me/…)<input name="channel" data-k="tg-channel" value="${esc(ch)}" placeholder="@mychannel" autocomplete="off"></label>
         <label>Токен бота от @BotFather${has ? ' (оставь пустым, чтобы не менять)' : ''}<input name="token" type="password" data-k="tg-token" autocomplete="off" placeholder="${has ? '••••••••' : '123456:ABC…'}"></label>
@@ -341,7 +361,7 @@
       ${Object.keys(tgSeen).length ? '<h3 style="margin-top:16px">Каналы, которые видит бот</h3>' + Object.keys(tgSeen).map(id => `<div class="item"><span class="grow">${esc(tgSeen[id].title)} ${tgSeen[id].username ? '@' + esc(tgSeen[id].username) : '(приватный)'}</span>${TG.sameChat({ id, username: tgSeen[id].username }, ch) ? '<span class="badge ready">выбран</span>' : `<button class="btn small" data-a="tgUse" data-id="${esc(tgSeen[id].username ? '@' + tgSeen[id].username : id)}">Использовать</button>`}</div>`).join('') : ''}</div>
       <div class="card"><h3>Как это работает</h3>
         <p class="muted"><b>Сайт → канал.</b> При публикации поста, спойлера или видео в админке стоит галочка «Отправить и в Telegram-канал». Спойлер в Telegram тоже скрыт, пока не нажмут.</p>
-        <p class="muted"><b>Канал → сайт.</b> Новые посты канала попадают в «Посты» сайта. Проверка идёт раз в минуту, пока сайт открыт у тебя (админа) в этом браузере. Telegram хранит непрочитанные посты около суток — заходи на сайт хотя бы раз в день.</p>
+        <p class="muted"><b>Канал → сайт.</b> Новые посты канала попадают в «Посты» сайта. Круглосуточно это делает GitHub Actions (нужен секрет TG_BOT_TOKEN в репозитории) — примерно раз в 10 минут, вместе с фото. Пока он не включён, проверка идёт раз в минуту, только когда сайт открыт у тебя (админа).</p>
         <p class="muted"><b>Подключение.</b> 1) Создай бота в @BotFather и скопируй токен. 2) Добавь бота администратором канала с правом публиковать сообщения. 3) Впиши токен и нажми «Сохранить». 4) Впиши @имя канала и нажми «Проверить». Если канал приватный (без @имени): напиши в него любой пост, нажми «Найти мой канал» и выбери его в списке.</p>
         <p class="muted">Токен хранится только в этом браузере — его нет ни в коде сайта, ни в базе. На другом устройстве его нужно ввести заново.</p></div>`;
   }
@@ -476,7 +496,7 @@
     del: b => {
       if (!sure(b)) return;
       const { type, id } = b.dataset;
-      run(S.remove(`${type}/${id}`)).then(() => (LINKED[type] || []).forEach(p => S.remove(`${p}/${id}`)));
+      run(type === 'posts' && feed.posts[id] ? S.set(`posts/${id}`, { deleted: true }) : S.remove(`${type}/${id}`)).then(() => (LINKED[type] || []).forEach(p => S.remove(`${p}/${id}`)));
     }
   };
 
@@ -570,6 +590,7 @@
   $('#logoName').textContent = $('#footName').textContent = C.channelName;
   document.title = C.channelName + ' — канал о грозах';
   $('#demoNote').hidden = !S.demo;
+  loadFeed();
   Object.keys(D).filter(k => k !== 'chat').forEach(k => S.on(k, v => { D[k] = v || {}; schedule(); }));
   S.onAuth(u => {
     user = u;
