@@ -286,8 +286,10 @@
 
   // Канал → сайт: забираем новые посты канала и кладём в «Посты» (ключ tg_<id>, повторный импорт ничего не дублирует).
   let tgBusy = false, tgOffset, tgLast = '';
+  const tgSeen = {}; // каналы, которые видит бот: id → { title, username }
+  const tgNote = chat => { if (chat && chat.type === 'channel') tgSeen[chat.id] = { title: chat.title || '', username: chat.username || '' }; };
   async function tgSync(manual) {
-    if (tgBusy || !isAdmin() || !tgReady()) return;
+    if (tgBusy || !isAdmin() || !TG.token()) return;
     tgBusy = true;
     let n = 0;
     try {
@@ -296,7 +298,9 @@
         if (!ups.length) break;
         for (const u of ups) {
           tgOffset = u.update_id + 1;
+          if (u.my_chat_member) tgNote(u.my_chat_member.chat);
           const m = u.channel_post || u.edited_channel_post;
+          if (m) tgNote(m.chat);
           if (!m || !TG.sameChat(m.chat, D.settings.tgChannel)) continue;
           const txt = (m.text || m.caption || '').trim();
           if (!txt && m.media_group_id) continue; // остальные фото альбома без подписи
@@ -314,7 +318,7 @@
         }
       }
       tgLast = 'Последняя проверка: ' + new Date().toLocaleTimeString('ru-RU') + (n ? ' — перенесено постов: ' + n : ' — новых постов нет');
-      if (manual || n) toast(n ? 'Из Telegram перенесено постов: ' + n : 'Новых постов в канале нет');
+      if (manual || n) toast(n ? 'Из Telegram перенесено постов: ' + n : Object.keys(tgSeen).length && !tgReady() ? 'Канал найден — выбери его в списке' : tgReady() ? 'Новых постов в канале нет' : 'Бот пока не видит каналов: сделай его админом и напиши пост в канал');
     } catch (e) {
       tgLast = 'Ошибка: ' + e.message;
       if (manual) toast(e.message);
@@ -332,12 +336,13 @@
         <label>Канал (@имя или ссылка t.me/…)<input name="channel" data-k="tg-channel" value="${esc(ch)}" placeholder="@mychannel" autocomplete="off"></label>
         <label>Токен бота от @BotFather${has ? ' (оставь пустым, чтобы не менять)' : ''}<input name="token" type="password" data-k="tg-token" autocomplete="off" placeholder="${has ? '••••••••' : '123456:ABC…'}"></label>
         <div class="row"><button class="btn">Сохранить</button>
-          ${has && ch ? '<button type="button" class="btn ghost" data-a="tgCheck">Проверить</button><button type="button" class="btn ghost" data-a="tgSync">Забрать посты сейчас</button>' : ''}
-          ${has ? '<button type="button" class="btn danger" data-a="tgForget">Удалить токен</button>' : ''}</div></form></div>
+          ${has && ch ? '<button type="button" class="btn ghost" data-a="tgCheck">Проверить</button>' : ''}
+          ${has ? '<button type="button" class="btn ghost" data-a="tgSync">Найти мой канал</button><button type="button" class="btn danger" data-a="tgForget">Удалить токен</button>' : ''}</div></form>
+      ${Object.keys(tgSeen).length ? '<h3 style="margin-top:16px">Каналы, которые видит бот</h3>' + Object.keys(tgSeen).map(id => `<div class="item"><span class="grow">${esc(tgSeen[id].title)} ${tgSeen[id].username ? '@' + esc(tgSeen[id].username) : '(приватный)'}</span>${TG.sameChat({ id, username: tgSeen[id].username }, ch) ? '<span class="badge ready">выбран</span>' : `<button class="btn small" data-a="tgUse" data-id="${esc(tgSeen[id].username ? '@' + tgSeen[id].username : id)}">Использовать</button>`}</div>`).join('') : ''}</div>
       <div class="card"><h3>Как это работает</h3>
         <p class="muted"><b>Сайт → канал.</b> При публикации поста, спойлера или видео в админке стоит галочка «Отправить и в Telegram-канал». Спойлер в Telegram тоже скрыт, пока не нажмут.</p>
         <p class="muted"><b>Канал → сайт.</b> Новые посты канала попадают в «Посты» сайта. Проверка идёт раз в минуту, пока сайт открыт у тебя (админа) в этом браузере. Telegram хранит непрочитанные посты около суток — заходи на сайт хотя бы раз в день.</p>
-        <p class="muted"><b>Подключение.</b> 1) Создай бота в @BotFather и скопируй токен. 2) Добавь бота администратором канала с правом публиковать сообщения. 3) Впиши канал и токен сюда и нажми «Проверить».</p>
+        <p class="muted"><b>Подключение.</b> 1) Создай бота в @BotFather и скопируй токен. 2) Добавь бота администратором канала с правом публиковать сообщения. 3) Впиши токен и нажми «Сохранить». 4) Впиши @имя канала и нажми «Проверить». Если канал приватный (без @имени): напиши в него любой пост, нажми «Найти мой канал» и выбери его в списке.</p>
         <p class="muted">Токен хранится только в этом браузере — его нет ни в коде сайта, ни в базе. На другом устройстве его нужно ввести заново.</p></div>`;
   }
 
@@ -465,6 +470,7 @@
     cancelEdit: () => { ui.edit = null; render(); },
     tgCheck: () => run(TG.check(D.settings.tgChannel)).then(r => toast(r.canPost ? 'Бот @' + r.bot + ' подключён к «' + r.channel + '»' : 'Бот @' + r.bot + ' не админ канала или без права публикации')).catch(() => {}),
     tgSync: () => tgSync(true),
+    tgUse: b => run(S.update('settings', { tgChannel: b.dataset.id })).then(() => { toast('Канал выбран'); render(); }),
     tgForget: b => { if (sure(b)) { TG.setToken(''); toast('Токен удалён из этого браузера'); render(); } },
     imgClear: b => { const w = b.closest('.imgf'); w.querySelector('input[type=hidden]').value = ''; w.querySelector('input[type=file]').value = ''; syncPreviews(); },
     del: b => {
@@ -513,6 +519,7 @@
     tg: f => {
       const t = f.token.value.trim();
       if (t && !/^\d+:[\w-]{30,}$/.test(t)) return toast('Это не похоже на токен бота');
+      if (TG.isInvite(f.channel.value)) return toast('Это ссылка-приглашение. Для приватного канала нажми «Найти мой канал»');
       if (t) TG.setToken(t);
       f.token.value = '';
       run(S.update('settings', { tgChannel: f.channel.value.trim() })).then(() => { toast('Сохранено'); render(); });

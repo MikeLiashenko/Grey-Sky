@@ -33,6 +33,7 @@ window.TG = (function () {
     catch (e) { throw new Error('Telegram недоступен (сеть или блокировщик рекламы)'); }
     try { j = await r.json(); } catch (e) { throw new Error('Telegram ответил с ошибкой ' + r.status); }
     if (!j.ok && r.status === 401) throw new Error('Telegram не принял токен бота — проверь, что он скопирован целиком');
+    if (!j.ok && /chat not found/i.test(j.description || '')) throw new Error('Telegram не нашёл канал. Проверь @имя. Если канал приватный или бот ещё не добавлен — сделай бота админом канала, напиши в канал любой пост и нажми «Найти мой канал»');
     if (!j.ok) throw new Error('Telegram: ' + (j.description || 'ошибка ' + j.error_code));
     return j.result;
   }
@@ -57,7 +58,9 @@ window.TG = (function () {
     return (await call('sendMessage', { chat_id, text: html.slice(0, 4096), parse_mode: 'HTML' })).message_id;
   }
 
-  const updates = offset => call('getUpdates', { offset, timeout: 0, allowed_updates: ['channel_post', 'edited_channel_post'] });
+  // my_chat_member приходит, когда бота добавляют в канал, — по нему находим приватные каналы без @имени
+  const updates = offset => call('getUpdates', { offset, timeout: 0, allowed_updates: ['channel_post', 'edited_channel_post', 'my_chat_member'] });
+  const isInvite = ch => /t\.me\/(\+|joinchat)/i.test(String(ch || ''));
 
   // Фото из поста канала. Telegram может не разрешить браузеру скачать файл — тогда вернётся null.
   async function photoBlob(sizes) {
@@ -69,5 +72,5 @@ window.TG = (function () {
     } catch (e) { return null; }
   }
 
-  return { token, setToken, esc, chatId, username, sameChat, check, send, updates, photoBlob };
+  return { token, setToken, esc, chatId, username, sameChat, isInvite, check, send, updates, photoBlob };
 })();
