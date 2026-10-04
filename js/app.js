@@ -86,7 +86,7 @@
       <h3 style="margin-top:8px">${esc(p.title)}</h3>
       <p>${short && (p.text || '').length > 220 ? rich(p.text.slice(0, 220)) + '…' : rich(p.text)}</p>
       ${!short && safeUrl(p.image) ? `<img class="pic" src="${safeUrl(p.image)}" alt="" loading="lazy">` : ''}
-      <div class="row">${likeBtn('likes', p.id, '♥')}
+      <div class="row">${likeBtn('likes', p.id, '♥')}${safeUrl(p.tgLink) ? `<a class="btn ghost small" href="${safeUrl(p.tgLink)}" target="_blank" rel="noopener">Открыть в Telegram</a>` : ''}
         ${short ? `<a class="btn ghost small" href="#/posts">💬 ${cs.length}</a>` : `<button class="btn ghost small" data-a="comments" data-id="${esc(p.id)}">💬 ${cs.length}</button>`}</div>
       ${!short && open ? `<div class="comments">
         ${cs.map(c => `<div class="comment"><b style="color:hsl(${hue(c.uid)} 80% 72%)">${esc(c.name)}</b><span class="muted">${ago(c.ts)}</span>
@@ -135,7 +135,7 @@
       const rel = released().slice(0, 3);
       const yt = safeUrl(s.youtube || C.youtube);
       return `<section class="hero"><h1>${esc(C.channelName)}</h1><p>${esc(s.about || C.tagline)}</p>
-          <div class="row">${yt ? `<a class="btn" href="${yt}" target="_blank" rel="noopener">▶ Канал на YouTube</a>` : ''}<a class="btn ghost" href="#/chat">Зайти в чат</a></div></section>
+          <div class="row">${yt ? `<a class="btn" href="${yt}" target="_blank" rel="noopener">▶ Канал на YouTube</a>` : ''}${TG.username(s.tgChannel) ? `<a class="btn ghost" href="https://t.me/${esc(TG.username(s.tgChannel))}" target="_blank" rel="noopener">Telegram-канал</a>` : ''}<a class="btn ghost" href="#/chat">Зайти в чат</a></div></section>
         ${s.live ? `<div class="banner live"><span class="dot"></span><div class="grow"><b>В эфире:</b> ${esc(s.liveTitle || 'идёт стрим')}</div>
           ${safeUrl(s.liveUrl) ? `<a class="btn small" href="${safeUrl(s.liveUrl)}" target="_blank" rel="noopener">Смотреть</a>` : ''}</div>` : ''}
         ${s.announce ? `<div class="banner"><span>📢</span><div class="grow">${rich(s.announce)}</div></div>` : ''}
@@ -210,12 +210,12 @@
       if (!user) return `<h1>Админка</h1><div class="empty">Войди в аккаунт, чтобы открыть админ-панель.<br><br><button class="btn" data-a="account">Войти</button></div>`;
       if (!isAdmin()) return `<h1>Админка</h1><div class="card"><p>У этого аккаунта нет прав администратора.</p>
         <p class="muted">Админы общие с приложением StormBook: в базе должна быть запись<br><code>admins/${esc(user.uid)}</code> со значением <code>true</code>, а в правилах — разрешение читать свой флаг (см. database.rules.full.json).</p></div>`;
-      const tabs = { settings: 'Настройки', videos: 'Видео', spoilers: 'Спойлеры', posts: 'Посты', polls: 'Опросы', mod: 'Модерация' };
+      const tabs = { settings: 'Настройки', videos: 'Видео', spoilers: 'Спойлеры', posts: 'Посты', polls: 'Опросы', tg: 'Telegram', mod: 'Модерация' };
       return `<h1>Админка</h1>
         <div class="stats">${[['videos', 'видео'], ['spoilers', 'спойлеров'], ['posts', 'постов'], ['polls', 'опросов'], ['ideas', 'идей'], ['chat', 'сообщений']]
           .map(([k, t]) => `<div class="card"><b>${count(D[k])}</b><span class="muted">${t}</span></div>`).join('')}</div>
         <div class="tabs">${Object.keys(tabs).map(k => `<button class="btn small ${ui.tab === k ? '' : 'ghost'}" data-a="tab" data-id="${k}">${tabs[k]}</button>`).join('')}</div>
-        ${ui.tab === 'settings' ? settingsForm() : ui.tab === 'mod' ? modPanel() : crud(ui.tab)}`;
+        ${ui.tab === 'settings' ? settingsForm() : ui.tab === 'mod' ? modPanel() : ui.tab === 'tg' ? tgPanel() : crud(ui.tab)}`;
     }
   };
 
@@ -251,6 +251,7 @@
     const items = list(D[type]).sort(byNew);
     return `<div class="card stack"><h3>${ed ? 'Редактировать' : 'Добавить'} ${sc.one}</h3>
         <form data-f="crud" data-type="${type}">${sc.fields.map(f => field(`crud-${type}-${ed || 'new'}`, f, cur[f[0]])).join('')}
+        ${!ed && TG_TYPES[type] && tgReady() ? `<label class="check"><input type="checkbox" name="_tg" data-k="crud-${type}-tg" checked> Отправить и в Telegram-канал</label>` : ''}
         <div class="row"><button class="btn">${ed ? 'Сохранить' : 'Опубликовать'}</button>${ed ? '<button type="button" class="btn ghost" data-a="cancelEdit">Отмена</button>' : ''}</div></form></div>
       <div class="card"><h3>Опубликовано</h3>${items.map(i => `<div class="item"><span class="grow">${esc(sc.label(i))}</span>
         <button class="btn ghost small" data-a="edit" data-type="${type}" data-id="${esc(i.id)}">Изменить</button>
@@ -267,6 +268,77 @@
       ${field('set', ['liveTitle', 'Текст баннера стрима', 'text'], s.liveTitle)}
       ${field('set', ['liveUrl', 'Ссылка на стрим', 'text'], s.liveUrl)}
       <button class="btn">Сохранить</button></form></div>`;
+  }
+
+  // ---------- Telegram ----------
+  const tgReady = () => !!(TG.token() && TG.chatId(D.settings.tgChannel));
+  const siteUrl = () => (/^https:/.test(location.protocol) ? location.origin + location.pathname : '');
+  const tgFooter = () => (siteUrl() ? '\n\n<a href="' + TG.esc(siteUrl()) + '">' + TG.esc(C.channelName) + ' — сайт канала</a>' : '');
+  // как запись с сайта выглядит в канале
+  const TG_TYPES = {
+    posts: v => ({ html: '<b>' + TG.esc(v.title) + '</b>' + (v.text ? '\n\n' + TG.esc(v.text) : '') + tgFooter(), image: v.image }),
+    spoilers: v => ({ html: '🙈 <b>Спойлер: ' + TG.esc(v.title) + '</b>' + (v.text ? '\n\n<tg-spoiler>' + TG.esc(v.text) + '</tg-spoiler>' : '') + tgFooter(), image: v.image, spoiler: true }),
+    videos: v => (v.status === 'released'
+      ? { html: '▶️ <b>Новое видео: ' + TG.esc(v.title) + '</b>' + (v.desc ? '\n\n' + TG.esc(v.desc) : '') + (v.url ? '\n\n' + TG.esc(v.url) : '') + tgFooter(), image: v.url ? '' : v.cover }
+      : { html: '🎬 <b>Скоро на канале: ' + TG.esc(v.title) + '</b>' + (v.desc ? '\n\n' + TG.esc(v.desc) : '') + '\n\n' + TG.esc(STATUS[v.status] || '') + (v.date ? ' · выйдет ' + TG.esc(fmtDate(v.date)) : '') + tgFooter(), image: v.cover })
+  };
+  const tgPublish = (type, v) => { const m = TG_TYPES[type](v); return TG.send(D.settings.tgChannel, m.html, m.image, m.spoiler); };
+
+  // Канал → сайт: забираем новые посты канала и кладём в «Посты» (ключ tg_<id>, повторный импорт ничего не дублирует).
+  let tgBusy = false, tgOffset, tgLast = '';
+  async function tgSync(manual) {
+    if (tgBusy || !isAdmin() || !tgReady()) return;
+    tgBusy = true;
+    let n = 0;
+    try {
+      for (;;) {
+        const ups = await TG.updates(tgOffset);
+        if (!ups.length) break;
+        for (const u of ups) {
+          tgOffset = u.update_id + 1;
+          const m = u.channel_post || u.edited_channel_post;
+          if (!m || !TG.sameChat(m.chat, D.settings.tgChannel)) continue;
+          const txt = (m.text || m.caption || '').trim();
+          if (!txt && m.media_group_id) continue; // остальные фото альбома без подписи
+          const nl = txt.indexOf('\n'), first = (nl < 0 ? txt : txt.slice(0, nl)).trim();
+          const short = first && first.length <= 80;
+          const v = {
+            title: short ? first : m.photo ? 'Фото из Telegram' : m.video ? 'Видео из Telegram' : 'Пост из Telegram',
+            text: short ? (nl < 0 ? '' : txt.slice(nl + 1).trim()) : txt,
+            ts: m.date * 1000, tg: m.message_id,
+            tgLink: m.chat.username ? 'https://t.me/' + m.chat.username + '/' + m.message_id : ''
+          };
+          if (m.photo) { const b = await TG.photoBlob(m.photo); if (b) { try { v.image = await shrinkImage(b); } catch (e) {} } }
+          await S.update('posts/tg_' + m.message_id, v);
+          n++;
+        }
+      }
+      tgLast = 'Последняя проверка: ' + new Date().toLocaleTimeString('ru-RU') + (n ? ' — перенесено постов: ' + n : ' — новых постов нет');
+      if (manual || n) toast(n ? 'Из Telegram перенесено постов: ' + n : 'Новых постов в канале нет');
+    } catch (e) {
+      tgLast = 'Ошибка: ' + e.message;
+      if (manual) toast(e.message);
+    }
+    tgBusy = false;
+    schedule();
+  }
+  setInterval(tgSync, 60e3);
+
+  function tgPanel() {
+    const has = !!TG.token(), ch = D.settings.tgChannel || '';
+    return `<div class="card stack"><h3>Telegram-канал</h3>
+      <p class="muted">Статус: ${has && ch ? 'подключено' : 'не подключено'}${has ? ' · токен сохранён в этом браузере' : ''}${tgLast ? '<br>' + esc(tgLast) : ''}</p>
+      <form data-f="tg">
+        <label>Канал (@имя или ссылка t.me/…)<input name="channel" data-k="tg-channel" value="${esc(ch)}" placeholder="@mychannel" autocomplete="off"></label>
+        <label>Токен бота от @BotFather${has ? ' (оставь пустым, чтобы не менять)' : ''}<input name="token" type="password" data-k="tg-token" autocomplete="off" placeholder="${has ? '••••••••' : '123456:ABC…'}"></label>
+        <div class="row"><button class="btn">Сохранить</button>
+          ${has && ch ? '<button type="button" class="btn ghost" data-a="tgCheck">Проверить</button><button type="button" class="btn ghost" data-a="tgSync">Забрать посты сейчас</button>' : ''}
+          ${has ? '<button type="button" class="btn danger" data-a="tgForget">Удалить токен</button>' : ''}</div></form></div>
+      <div class="card"><h3>Как это работает</h3>
+        <p class="muted"><b>Сайт → канал.</b> При публикации поста, спойлера или видео в админке стоит галочка «Отправить и в Telegram-канал». Спойлер в Telegram тоже скрыт, пока не нажмут.</p>
+        <p class="muted"><b>Канал → сайт.</b> Новые посты канала попадают в «Посты» сайта. Проверка идёт раз в минуту, пока сайт открыт у тебя (админа) в этом браузере. Telegram хранит непрочитанные посты около суток — заходи на сайт хотя бы раз в день.</p>
+        <p class="muted"><b>Подключение.</b> 1) Создай бота в @BotFather и скопируй токен. 2) Добавь бота администратором канала с правом публиковать сообщения. 3) Впиши канал и токен сюда и нажми «Проверить».</p>
+        <p class="muted">Токен хранится только в этом браузере — его нет ни в коде сайта, ни в базе. На другом устройстве его нужно ввести заново.</p></div>`;
   }
 
   function modPanel() {
@@ -391,6 +463,9 @@
     tab: b => { ui.tab = b.dataset.id; ui.edit = null; render(); },
     edit: b => { ui.edit = { type: b.dataset.type, id: b.dataset.id }; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); },
     cancelEdit: () => { ui.edit = null; render(); },
+    tgCheck: () => run(TG.check(D.settings.tgChannel)).then(r => toast(r.canPost ? 'Бот @' + r.bot + ' подключён к «' + r.channel + '»' : 'Бот @' + r.bot + ' не админ канала или без права публикации')).catch(() => {}),
+    tgSync: () => tgSync(true),
+    tgForget: b => { if (sure(b)) { TG.setToken(''); toast('Токен удалён из этого браузера'); render(); } },
     imgClear: b => { const w = b.closest('.imgf'); w.querySelector('input[type=hidden]').value = ''; w.querySelector('input[type=file]').value = ''; syncPreviews(); },
     del: b => {
       if (!sure(b)) return;
@@ -433,7 +508,14 @@
       const v = {};
       ['about', 'youtube', 'announce', 'liveTitle', 'liveUrl'].forEach(k => (v[k] = f[k].value.trim()));
       v.live = f.live.checked;
-      run(S.set('settings', v)).then(() => toast('Сохранено'));
+      run(S.update('settings', v)).then(() => toast('Сохранено'));
+    },
+    tg: f => {
+      const t = f.token.value.trim();
+      if (t && !/^\d+:[\w-]{30,}$/.test(t)) return toast('Это не похоже на токен бота');
+      if (t) TG.setToken(t);
+      f.token.value = '';
+      run(S.update('settings', { tgChannel: f.channel.value.trim() })).then(() => { toast('Сохранено'); render(); });
     },
     crud: f => {
       const type = f.dataset.type, sc = SCHEMA[type], v = {};
@@ -447,7 +529,12 @@
       if (type === 'polls' && v.options.length < 2) return toast('Нужно минимум 2 варианта');
       const ed = ui.edit && ui.edit.type === type ? ui.edit.id : null;
       const p = ed ? S.update(`${type}/${ed}`, v) : S.push(type, Object.assign(v, { ts: S.now() }));
-      run(p).then(() => { ui.edit = null; f.reset(); f.querySelectorAll('input[type=hidden]').forEach(e => (e.value = '')); toast(ed ? 'Сохранено' : 'Опубликовано'); render(); });
+      const toTg = !ed && f._tg && f._tg.checked && tgReady();
+      run(p).then(() => {
+        ui.edit = null; f.reset(); f.querySelectorAll('input[type=hidden]').forEach(e => (e.value = ''));
+        toast(ed ? 'Сохранено' : 'Опубликовано'); render();
+        if (toTg) tgPublish(type, v).then(() => toast('Опубликовано на сайте и в Telegram'), e => toast('На сайте опубликовано, в Telegram — нет. ' + e.message));
+      });
     }
   };
 
@@ -484,7 +571,7 @@
     if (offAdmin) offAdmin();
     offChat = offAdmin = null; D.chat = {}; adminFlag = false; adminWhy = '';
     if (u || S.demo) offChat = S.on('/chats/global', v => { D.chat = v || {}; schedule(); }, 80);
-    if (u) offAdmin = S.on('/admins/' + u.uid, v => { adminFlag = v === true; adminWhy = adminFlag ? '' : 'missing'; schedule(); }, 0, () => { adminWhy = 'denied'; schedule(); });
+    if (u) offAdmin = S.on('/admins/' + u.uid, v => { adminFlag = v === true; adminWhy = adminFlag ? '' : 'missing'; schedule(); if (adminFlag) tgSync(); }, 0, () => { adminWhy = 'denied'; schedule(); });
     schedule();
   });
   render();
