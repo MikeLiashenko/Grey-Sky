@@ -5,7 +5,7 @@
 
   // ---------- helpers ----------
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const safeUrl = u => (/^https?:\/\//i.test(u || '') ? esc(u) : '');
+  const safeUrl = u => (/^https?:\/\//i.test(u || '') || /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+\/=]+$/.test(u || '') ? esc(u) : '');
   const rich = s => esc(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, '<br>');
   const ytId = u => { const m = String(u || '').match(/(?:youtu\.be\/|v=|shorts\/|live\/|embed\/)([\w-]{11})/); return m ? m[1] : ''; };
   const list = o => Object.entries(o || {}).map(([id, v]) => Object.assign({ id }, v));
@@ -224,17 +224,19 @@
     videos: { one: 'видео', label: v => v.title, fields: [
       ['title', 'Название', 'text'], ['desc', 'Описание', 'textarea'], ['date', 'Дата выхода (можно пусто)', 'datetime'],
       ['status', 'Статус', 'select', STATUS], ['progress', 'Готовность, %', 'number'],
-      ['url', 'Ссылка на YouTube (когда вышло)', 'text'], ['cover', 'Обложка — ссылка на картинку (необязательно)', 'text']] },
+      ['url', 'Ссылка на YouTube (когда вышло)', 'text'], ['cover', 'Обложка (необязательно — иначе возьмётся с YouTube)', 'image']] },
     spoilers: { one: 'спойлер', label: v => v.title, fields: [
-      ['title', 'Заголовок (виден всем сразу)', 'text'], ['text', 'Текст спойлера (скрыт, пока не откроют)', 'textarea'], ['image', 'Картинка — ссылка (необязательно)', 'text']] },
+      ['title', 'Заголовок (виден всем сразу)', 'text'], ['text', 'Текст спойлера (скрыт, пока не откроют)', 'textarea'], ['image', 'Картинка (необязательно)', 'image']] },
     posts: { one: 'пост', label: v => v.title, fields: [
-      ['title', 'Заголовок', 'text'], ['text', 'Текст', 'textarea'], ['image', 'Картинка — ссылка (необязательно)', 'text'], ['pinned', 'Закрепить наверху', 'check']] },
+      ['title', 'Заголовок', 'text'], ['text', 'Текст', 'textarea'], ['image', 'Картинка (необязательно)', 'image'], ['pinned', 'Закрепить наверху', 'check']] },
     polls: { one: 'опрос', label: v => v.question, fields: [
       ['question', 'Вопрос', 'text'], ['options', 'Варианты (каждый с новой строки)', 'lines'], ['open', 'Голосование открыто', 'check']] }
   };
 
   function field(key, [n, label, type, opts], v) {
     const k = `data-k="${key}-${n}" name="${n}"`;
+    if (type === 'image') return `<div class="imgf"><label>${label}<input type="file" accept="image/*" data-c="img"></label>
+      <input type="hidden" ${k} value="${safeUrl(v)}"><img class="pic" alt="" hidden><button type="button" class="link" data-a="imgClear" hidden>убрать картинку</button></div>`;
     if (type === 'check') return `<label class="check"><input type="checkbox" ${k} ${v ? 'checked' : ''}> ${label}</label>`;
     if (type === 'textarea') return `<label>${label}<textarea ${k}>${esc(v)}</textarea></label>`;
     if (type === 'lines') return `<label>${label}<textarea ${k}>${esc((v || []).join('\n'))}</textarea></label>`;
@@ -294,6 +296,7 @@
       view.querySelectorAll('[data-k]').forEach(e => { if (e.dataset.k in vals) { if (e.type === 'checkbox') e.checked = vals[e.dataset.k]; else e.value = vals[e.dataset.k]; } });
       if (focus) { const e = view.querySelector(`[data-k="${focus.k}"]`); if (e) { e.focus(); try { e.setSelectionRange(focus.s, focus.e); } catch (_) {} } }
     } else window.scrollTo(0, 0);
+    syncPreviews();
     const nl = $('#chatlog'); if (nl && (atBottom || !same)) nl.scrollTop = nl.scrollHeight;
     lastRoute = r;
 
@@ -302,6 +305,31 @@
     $('#userBtn').textContent = user ? (user.name || 'Выбрать позывной') : 'Войти';
     $('#footYt').href = (D.settings.youtube && /^https?:\/\//i.test(D.settings.youtube)) ? D.settings.youtube : C.youtube;
     tick();
+  }
+
+  // ---------- загрузка картинок ----------
+  // Картинка сжимается в браузере и хранится прямо в базе (как медиа в приложении StormBook).
+  function syncPreviews() {
+    view.querySelectorAll('.imgf').forEach(w => {
+      const v = w.querySelector('input[type=hidden]').value, img = w.querySelector('img');
+      if (v) img.src = v; else img.removeAttribute('src');
+      img.hidden = w.querySelector('[data-a=imgClear]').hidden = !v;
+    });
+  }
+  function shrinkImage(file, max = 1280, quality = 0.8) {
+    return new Promise((resolve, reject) => {
+      const img = new Image(), url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const k = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('не удалось прочитать картинку')); };
+      img.src = url;
+    });
   }
 
   function tick() {
@@ -363,6 +391,7 @@
     tab: b => { ui.tab = b.dataset.id; ui.edit = null; render(); },
     edit: b => { ui.edit = { type: b.dataset.type, id: b.dataset.id }; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); },
     cancelEdit: () => { ui.edit = null; render(); },
+    imgClear: b => { const w = b.closest('.imgf'); w.querySelector('input[type=hidden]').value = ''; w.querySelector('input[type=file]').value = ''; syncPreviews(); },
     del: b => {
       if (!sure(b)) return;
       const { type, id } = b.dataset;
@@ -418,7 +447,7 @@
       if (type === 'polls' && v.options.length < 2) return toast('Нужно минимум 2 варианта');
       const ed = ui.edit && ui.edit.type === type ? ui.edit.id : null;
       const p = ed ? S.update(`${type}/${ed}`, v) : S.push(type, Object.assign(v, { ts: S.now() }));
-      run(p).then(() => { ui.edit = null; f.reset(); toast(ed ? 'Сохранено' : 'Опубликовано'); render(); });
+      run(p).then(() => { ui.edit = null; f.reset(); f.querySelectorAll('input[type=hidden]').forEach(e => (e.value = '')); toast(ed ? 'Сохранено' : 'Опубликовано'); render(); });
     }
   };
 
@@ -432,6 +461,12 @@
     if (f && FORMS[f.dataset.f]) { e.preventDefault(); FORMS[f.dataset.f](f); }
   });
   document.addEventListener('change', e => {
+    if (e.target.dataset.c === 'img') {
+      const file = e.target.files[0], w = e.target.closest('.imgf');
+      if (!file) return;
+      if (!file.type.startsWith('image/')) return toast('Это не картинка');
+      run(shrinkImage(file)).then(d => { w.querySelector('input[type=hidden]').value = d; syncPreviews(); }).catch(() => {});
+    }
     if (e.target.dataset.c === 'ideaStatus') run(S.update('ideas/' + e.target.dataset.id, { status: e.target.value }));
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });

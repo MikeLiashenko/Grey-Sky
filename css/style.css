@@ -165,3 +165,8 @@ code { background: var(--bg); border: 1px solid var(--line); padding: 2px 6px; b
   #nav { order: 3; flex-basis: 100%; }
   .msg .tools { opacity: 1; }
 }
+
+.imgf { margin-bottom: 12px; }
+.imgf label { margin-bottom: 4px; }
+.imgf .pic { max-height: 200px; }
+input[type=file] { padding: 8px; }
