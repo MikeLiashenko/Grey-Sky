@@ -26,9 +26,13 @@ window.TG = (function () {
       if (v == null || v === '') return;
       if (v instanceof Blob) form.append(k, v, 'image.jpg'); else form.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
     });
-    let j;
-    try { j = await (await fetch(`https://api.telegram.org/bot${token()}/${method}`, { method: 'POST', body: form })).json(); }
-    catch (e) { throw new Error('Telegram недоступен (сеть)'); }
+    // Пустую форму Telegram отвергает (400 без тела), поэтому запросы без параметров идут обычным GET.
+    const empty = form.keys().next().done;
+    let r, j;
+    try { r = await fetch(`https://api.telegram.org/bot${token()}/${method}`, empty ? {} : { method: 'POST', body: form }); }
+    catch (e) { throw new Error('Telegram недоступен (сеть или блокировщик рекламы)'); }
+    try { j = await r.json(); } catch (e) { throw new Error('Telegram ответил с ошибкой ' + r.status); }
+    if (!j.ok && r.status === 401) throw new Error('Telegram не принял токен бота — проверь, что он скопирован целиком');
     if (!j.ok) throw new Error('Telegram: ' + (j.description || 'ошибка ' + j.error_code));
     return j.result;
   }
